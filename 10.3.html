@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patronato Zacualpan</title>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background: #f4f4f4;
+            margin: 1cm;
+            border: 5mm solid orange;
+            box-sizing: border-box;
+            outline: 1cm solid blue;
+        }
+        .container {
+            max-width: 400px;
+            margin: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        canvas {
+            max-width: 100%;
+        }
+        .return-btn {
+            display: inline-block;
+            width: 4cm;
+            height: 10mm;
+            background-color: #f44336;
+            color: white;
+            font-weight: bold;
+            border: 2px solid #b71c1c;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        .btn-verde {
+            background-color: green;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container" id="login-container">
+        <h2>Inicio de Sesión</h2>
+        <input type="text" id="username" placeholder="Nombre de usuario">
+        <input type="password" id="password" placeholder="Contraseña">
+        <button onclick="login()">Ingresar</button>
+        <button onclick="recuperarContrasena()">¿Olvidaste tu contraseña?</button>
+    </div>
+
+    <div class="container" id="dashboard" style="display:none;">
+        <h2 id="bienvenida" style="font-weight:bold; font-size:1.5em;"></h2>
+        <p>Saldo actual: <span id="saldo">$0</span></p>
+        <div id="admin-controls" style="display:none;">
+            <button onclick="agregarIngreso()">Agregar Ingreso</button>
+            <button onclick="registrarEgreso()">Registrar Egreso</button>
+            <button onclick="generarReporteIE()">Reporte Ingresos/Egresos</button>
+        </div>
+        <div id="ver-donadores" style="display:none;">
+            <button id="btnVerDonadores" class="btn-verde" onclick="mostrarDonadores()">Ver Donadores</button>
+        </div>
+        <div id="returnInicio" style="display:none;">
+            <button class="return-btn" onclick="location.reload()">REGRESA A INICIO</button>
+        </div>
+        <canvas id="balanceChart"></canvas>
+    </div>
+
+    <script>
+        let saldo = 0;
+        let folio = 1;
+        const admins = ["presidente", "tesorera", "secretario", "vocal1", "vocal2"];
+        let isAdmin = false;
+        let currentUser = "";
+        const usuarios = {
+            "presidente": "admin123",
+            "tesorera": "admin456",
+            "secretario": "admin789",
+            "vocal1": "admin321",
+            "vocal2": "admin654"
+        };
+        const donadores = {};
+        const mensajesMotivadores = [
+            "¡Gracias por tu apoyo! Juntos hacemos la diferencia!",
+            "Tu generosidad equipa a nuestros héroes voluntarios!",
+            "Cada peso cuenta para la seguridad de nuestra comunidad!",
+            "Un pequeño aporte, un gran impacto en la protección civil!"
+        ];
+
+        function login() {
+            let username = document.getElementById('username').value.trim().toLowerCase();
+            let password = document.getElementById('password').value;
+
+            if (usuarios.hasOwnProperty(username) && usuarios[username] === password) {
+                currentUser = username;
+                document.getElementById('login-container').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+
+                let rolDisplay = username === 'tesorera' ? 'Tesorera' : username.charAt(0).toUpperCase() + username.slice(1);
+                document.getElementById('bienvenida').innerText = `Bienvenido(a) ${rolDisplay}`;
+
+                if (username === 'tesorera') {
+                    isAdmin = true;
+                    document.getElementById('admin-controls').style.display = 'block';
+                    document.getElementById('ver-donadores').style.display = 'block';
+                } else if (username === 'presidente') {
+                    document.getElementById('ver-donadores').style.display = 'block';
+                } else {
+                    document.getElementById('returnInicio').style.display = 'block';
+                }
+            } else {
+                Swal.fire('Error', 'Usuario o contraseña incorrectos.', 'error');
+            }
+        }
+
+        function agregarIngreso() {
+            if (!isAdmin || currentUser !== 'tesorera') {
+                Swal.fire('Acceso denegado', 'Solo la tesorera puede agregar ingresos.', 'error');
+                return;
+            }
+
+            let nombre = prompt("Ingrese el nombre del donador:");
+            if (!nombre) return;
+
+            if (!donadores[nombre]) {
+                let telefono = prompt("Ingrese el número de teléfono:");
+                let poblacion = prompt("Ingrese la población:");
+                let montoMensual = parseFloat(prompt("Ingrese la cantidad de pesos por mes:"));
+                if (isNaN(montoMensual) || montoMensual <= 0) return;
+                donadores[nombre] = { telefono, poblacion, saldo: 0, montoMensual };
+            }
+
+            let monto = parseFloat(prompt("Ingrese el monto del ingreso:"));
+            if (!isNaN(monto) && monto > 0) {
+                donadores[nombre].saldo += monto;
+                saldo += monto;
+                actualizarSaldo();
+                generarRecibo(nombre, monto);
+            }
+        }
+
+        function actualizarSaldo() {
+            document.getElementById('saldo').innerText = `$${saldo}`;
+        }
+
+        function generarRecibo(nombre, monto) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            const logo = new Image();
+            logo.src = "./patronato logo.JPG"; // Debe estar en la misma carpeta del HTML
+            doc.addImage(logo, 'JPEG', 10, 6, 20, 20);
+
+            doc.setDrawColor(0, 51, 153);
+            doc.setLineWidth(1);
+            doc.rect(5, 5, 200, 90);
+            doc.setDrawColor(255, 165, 0);
+            doc.rect(7, 7, 196, 86);
+
+            doc.setTextColor(0, 0, 0);
+            doc.setFontSize(16);
+            doc.text("RECIBO DE DONACIÓN", 70, 20);
+
+            doc.setFontSize(12);
+            doc.text(`Folio: ${folio.toString().padStart(3, '0')}`, 150, 30);
+            doc.text(`Fecha: ${new Date().toLocaleDateString()}`, 10, 40);
+            doc.text(`Recibí de: ${nombre}`, 10, 50);
+            doc.text(`Cantidad: $${monto}`, 10, 60);
+            doc.text("Forma de pago: Efectivo", 10, 70);
+            doc.text("Recibido por: Patronato Zacualpan", 10, 80);
+
+            let mensaje = mensajesMotivadores[Math.floor(Math.random() * mensajesMotivadores.length)];
+            doc.setFont("helvetica", "bolditalic");
+            doc.setFontSize(13);
+            doc.text(mensaje, 105, 91, { maxWidth: 180, align: "center" });
+
+            folio++;
+            doc.save(`Recibo_${nombre}.pdf`);
+        }
+
+        function recuperarContrasena() {
+            Swal.fire('Recuperación', 'Por favor contacte al administrador.', 'info');
+        }
+
+        function registrarEgreso() {
+            if (!isAdmin || currentUser !== 'tesorera') {
+                Swal.fire('Acceso denegado', 'Solo la tesorera puede registrar egresos.', 'error');
+                return;
+            }
+
+            let monto = parseFloat(prompt("Ingrese el monto del egreso:"));
+            let motivo = prompt("Ingrese el motivo del pago:");
+            if (!isNaN(monto) && monto > 0 && motivo) {
+                Swal.fire({
+                    title: 'Subir comprobante',
+                    html: '<input type="file" id="comprobante" accept="image/*,.pdf">',
+                    preConfirm: () => {
+                        const file = document.getElementById('comprobante').files[0];
+                        if (!file) {
+                            Swal.showValidationMessage('Debe subir un comprobante');
+                        }
+                        return file;
+                    }
+                }).then(result => {
+                    if (result.isConfirmed) {
+                        saldo -= monto;
+                        actualizarSaldo();
+                        Swal.fire('Egreso registrado', 'El egreso fue registrado con éxito.', 'success');
+                    }
+                });
+            }
+        }
+
+        function mostrarDonadores() {
+            console.log("Mostrar donadores - por implementar");
+        }
+
+        function generarReporteIE() {
+            console.log("Generar reporte de ingresos y egresos - por implementar");
+        }
+    </script>
+</body>
+</html>
